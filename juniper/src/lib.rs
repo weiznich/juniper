@@ -155,6 +155,7 @@ pub use value::Value;
 pub use types::base::{Arguments, GraphQLType, TypeKind};
 pub use executor::{Context, ExecutionError, ExecutionResult, Executor, FieldError, FieldResult,
                    FromContext, IntoResolvable, Registry, Variables};
+pub use executor::{Applies, LookAheadArgument, LookAheadSelection, LookAheadValue, LookAheadMethods};
 pub use validation::RuleError;
 pub use types::scalars::{EmptyMutation, ID};
 pub use schema::model::RootNode;

@@ -7,8 +7,8 @@ use std::sync::RwLock;
 use fnv::FnvHashMap;
 
 use GraphQLError;
-use ast::{Definition, Document, Fragment, FromInputValue, InputValue, OperationType, Selection,
-          ToInputValue, Type};
+use ast::{Definition, Document, Fragment, FromInputValue, InputValue, OperationType,
+          Selection, ToInputValue, Type};
 use value::Value;
 use parser::SourcePosition;
 
@@ -18,6 +18,10 @@ use schema::model::{RootNode, SchemaType, TypeType};
 
 use types::base::GraphQLType;
 use types::name::Name;
+
+mod look_ahead;
+
+pub use self::look_ahead::{Applies, LookAheadArgument, LookAheadSelection, LookAheadValue, LookAheadMethods, ChildSelection};
 
 /// A type registry used to build schemas
 ///
@@ -51,6 +55,7 @@ where
     context: &'a CtxT,
     errors: &'a RwLock<Vec<ExecutionError>>,
     field_path: FieldPath<'a>,
+    type_name: &'a str,
 }
 
 /// Error type for errors that occur during query execution
@@ -318,6 +323,7 @@ impl<'a, CtxT> Executor<'a, CtxT> {
             context: ctx,
             errors: self.errors,
             field_path: self.field_path.clone(),
+            type_name: self.type_name,
         }
     }
 
@@ -344,6 +350,7 @@ impl<'a, CtxT> Executor<'a, CtxT> {
             context: self.context,
             errors: self.errors,
             field_path: FieldPath::Field(field_alias, location, &self.field_path),
+            type_name: self.type_name
         }
     }
 
@@ -365,6 +372,7 @@ impl<'a, CtxT> Executor<'a, CtxT> {
             context: self.context,
             errors: self.errors,
             field_path: self.field_path.clone(),
+            type_name: type_name.unwrap(),
         }
     }
 
@@ -419,6 +427,18 @@ impl<'a, CtxT> Executor<'a, CtxT> {
             path: path,
             error: error,
         });
+    }
+
+    pub fn look_ahead(&self) -> LookAheadSelection {
+        LookAheadSelection{
+            name: self.type_name,
+            alias: None,
+            arguments: Vec::new(),
+            childs: self.current_selection_set.map(|s| s.iter().map(|s| ChildSelection {
+                inner: LookAheadSelection::build_from_selection(s, self.variables, self.fragments),
+                applies_for: Applies::All
+            }).collect()).unwrap_or_else(Vec::new)
+        }
     }
 }
 
@@ -552,6 +572,7 @@ where
             context: context,
             errors: &errors,
             field_path: FieldPath::Root(op.start),
+            type_name: &op.item.name.map(|n| n.item).unwrap_or(""),
         };
 
         value = match op.item.operation_type {
