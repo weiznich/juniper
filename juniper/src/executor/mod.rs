@@ -8,7 +8,7 @@ use fnv::FnvHashMap;
 
 use GraphQLError;
 use ast::{Definition, Document, Fragment, FromInputValue, InputValue, OperationType,
-          Selection, ToInputValue, Type};
+          Selection, ToInputValue, Type, self};
 use value::Value;
 use parser::SourcePosition;
 
@@ -50,6 +50,7 @@ where
     fragments: &'a HashMap<&'a str, &'a Fragment<'a>>,
     variables: &'a Variables,
     current_selection_set: Option<&'a [Selection<'a>]>,
+    parent_selection_set: Option<&'a [Selection<'a>]>,
     current_type: TypeType<'a>,
     schema: &'a SchemaType<'a>,
     context: &'a CtxT,
@@ -318,6 +319,7 @@ impl<'a, CtxT> Executor<'a, CtxT> {
             fragments: self.fragments,
             variables: self.variables,
             current_selection_set: self.current_selection_set,
+            parent_selection_set: self.parent_selection_set,
             current_type: self.current_type.clone(),
             schema: self.schema,
             context: ctx,
@@ -339,6 +341,7 @@ impl<'a, CtxT> Executor<'a, CtxT> {
             fragments: self.fragments,
             variables: self.variables,
             current_selection_set: selection_set,
+            parent_selection_set: self.current_selection_set,
             current_type: self.schema.make_type(
                 &self.current_type
                     .innermost_concrete()
@@ -350,7 +353,7 @@ impl<'a, CtxT> Executor<'a, CtxT> {
             context: self.context,
             errors: self.errors,
             field_path: FieldPath::Field(field_alias, location, &self.field_path),
-            type_name: self.type_name
+            type_name: self.type_name,
         }
     }
 
@@ -364,6 +367,7 @@ impl<'a, CtxT> Executor<'a, CtxT> {
             fragments: self.fragments,
             variables: self.variables,
             current_selection_set: selection_set,
+            parent_selection_set: self.current_selection_set,
             current_type: match type_name {
                 Some(type_name) => self.schema.type_by_name(type_name).expect("Type not found"),
                 None => self.current_type.clone(),
@@ -429,16 +433,20 @@ impl<'a, CtxT> Executor<'a, CtxT> {
         });
     }
 
-    pub fn look_ahead(&self) -> LookAheadSelection {
-        LookAheadSelection{
-            name: self.type_name,
-            alias: None,
-            arguments: Vec::new(),
-            childs: self.current_selection_set.map(|s| s.iter().map(|s| ChildSelection {
-                inner: LookAheadSelection::build_from_selection(s, self.variables, self.fragments),
-                applies_for: Applies::All
-            }).collect()).unwrap_or_else(Vec::new)
-        }
+    pub fn look_ahead(&'a self) -> LookAheadSelection<'a> {
+        self.parent_selection_set.map(|p| {
+            LookAheadSelection::build_from_selection(&p[0], self.variables, self.fragments)
+        }).unwrap_or_else(||{
+            LookAheadSelection{
+                name: self.current_type.innermost_concrete().name().unwrap_or(""),
+                alias: None,
+                arguments: Vec::new(),
+                childs: self.current_selection_set.map(|s| s.iter().map(|s| ChildSelection {
+                    inner: LookAheadSelection::build_from_selection(s, self.variables, self.fragments),
+                    applies_for: Applies::All
+                }).collect()).unwrap_or_else(Vec::new)
+            }
+        })
     }
 }
 
@@ -522,7 +530,6 @@ where
         Some(op) => op,
         None => return Err(GraphQLError::UnknownOperationName),
     };
-
     let default_variable_values = op.item.variable_definitions.map(|defs| {
         defs.item
             .items
@@ -567,6 +574,7 @@ where
                 .collect(),
             variables: final_vars,
             current_selection_set: Some(&op.item.selection_set[..]),
+            parent_selection_set: None,
             current_type: root_type,
             schema: &root_node.schema,
             context: context,
