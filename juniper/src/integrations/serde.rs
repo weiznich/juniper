@@ -8,7 +8,7 @@ use ast::InputValue;
 use executor::ExecutionError;
 use parser::{ParseError, SourcePosition, Spanning};
 use validation::RuleError;
-use {GraphQLError, Value};
+use {GraphQLError, Object, Value};
 
 impl ser::Serialize for ExecutionError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -241,6 +241,22 @@ impl<'a> ser::Serialize for Spanning<ParseError<'a>> {
     }
 }
 
+impl ser::Serialize for Object {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.field_count()))?;
+
+        for &(ref f, ref v) in self.iter() {
+            map.serialize_key(f)?;
+            map.serialize_value(v)?;
+        }
+
+        map.end()
+    }
+}
+
 impl ser::Serialize for Value {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -260,21 +276,27 @@ impl ser::Serialize for Value {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::from_str;
     use ast::InputValue;
+    use serde_json::from_str;
 
     #[test]
     fn int() {
-        assert_eq!(from_str::<InputValue>("1235").unwrap(),
-                   InputValue::int(1235));
+        assert_eq!(
+            from_str::<InputValue>("1235").unwrap(),
+            InputValue::int(1235)
+        );
     }
 
     #[test]
     fn float() {
-        assert_eq!(from_str::<InputValue>("2.0").unwrap(),
-                   InputValue::float(2.0));
+        assert_eq!(
+            from_str::<InputValue>("2.0").unwrap(),
+            InputValue::float(2.0)
+        );
         // large value without a decimal part is also float
-        assert_eq!(from_str::<InputValue>("123567890123").unwrap(),
-                   InputValue::float(123567890123.0));
+        assert_eq!(
+            from_str::<InputValue>("123567890123").unwrap(),
+            InputValue::float(123567890123.0)
+        );
     }
 }
